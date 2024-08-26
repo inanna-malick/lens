@@ -9,28 +9,22 @@ fn main() {
     };
 
     println!("atom: {:?}", atom);
-    println!(
-        "atom point: {:?}",
-        getter::<_, _, AtomPoint>()(atom.clone())
-    );
-    println!(
-        "atom x: {:?}",
-        getter::<_, _, LC<_, _, _, AtomPoint, PointX>>()(atom.clone())
-    );
+    println!("atom point: {:?}", getter::<AtomPoint>(atom.clone()));
+    println!("atom x: {:?}", getter::<C<AtomPoint, PointX>>(atom.clone()));
 
-    let shift_x = over::<_, _, LC<_, _, _, AtomPoint, PointX>>(|x| x + 1);
+    let shift_x = |a| over::<C<AtomPoint, PointX>>(a, |x| x + 1);
 
     let shifted = shift_x(atom);
 
     println!("shifted atom: {:?}", shifted);
 }
 
-fn getter<A, B, L: Lens<A, B>>() -> impl Fn(A) -> B {
-    |a| L::f::<Const<B, Partial>>(|b| Const(b, PhantomData))(a).0
+fn getter<L: Lens + 'static>(a: L::A) -> L::B {
+    L::f::<Const<L::B, Partial>>(|b| Const(b, PhantomData))(a).0
 }
 
-fn over<A, B, L: Lens<A, B>>(f: impl Fn(B) -> B) -> impl Fn(A) -> A {
-    move |a| L::f::<Identity<Partial>>(|b| Identity(f(b)))(a).0
+fn over<L: Lens + 'static>(a: L::A, f: impl Fn(L::B) -> L::B + 'static) -> L::A {
+    L::f::<Identity<Partial>>(move |b| Identity(f(b)))(a).0
 }
 
 trait Functor {
@@ -75,14 +69,21 @@ struct Point {
     y: u32,
 }
 
-trait Lens<A, B> {
-    fn f<F: Functor>(k: impl Fn(B) -> F::F<B>) -> impl Fn(A) -> F::F<A>;
+trait Lens {
+    type A;
+    type B;
+    fn f<F: Functor + 'static>(
+        k: impl Fn(Self::B) -> F::F<Self::B> + 'static,
+    ) -> impl Fn(Self::A) -> F::F<Self::A>;
 }
 
 struct AtomPoint;
 
-impl Lens<Atom, Point> for AtomPoint {
-    fn f<F: Functor>(k: impl Fn(Point) -> F::F<Point>) -> impl Fn(Atom) -> F::F<Atom> {
+impl Lens for AtomPoint {
+    type A = Atom;
+    type B = Point;
+
+    fn f<F: Functor>(k: impl Fn(Self::B) -> F::F<Self::B>) -> impl Fn(Self::A) -> F::F<Self::A> {
         // clone req'd because fmap may call fn multiple times
         // TODO: Try using an FnOnce, see if that breaks anything
         move |a| {
@@ -99,21 +100,67 @@ impl Lens<Atom, Point> for AtomPoint {
 
 struct PointX;
 
-impl Lens<Point, u32> for PointX {
-    fn f<F: Functor>(k: impl Fn(u32) -> F::F<u32>) -> impl Fn(Point) -> F::F<Point> {
+impl Lens for PointX {
+    type A = Point;
+    type B = u32;
+
+    fn f<F: Functor>(k: impl Fn(Self::B) -> F::F<Self::B>) -> impl Fn(Self::A) -> F::F<Self::A> {
         move |a| F::fmap(move |new_x| Point { x: new_x, y: a.y }, k(a.x))
     }
 }
 
 /// lense compose
-struct LC<A, B, C, L1: Lens<A, B>, L2: Lens<B, C>>(PhantomData<(A, B, C)>, L1, L2);
+struct C<L1, L2>(L1, L2);
 
-impl<L1, L2, Intermediate, A, B> Lens<A, B> for LC<A, Intermediate, B, L1, L2>
+impl<L1, L2> Lens for C<L1, L2>
 where
-    L1: Lens<A, Intermediate>,
-    L2: Lens<Intermediate, B>,
+    L1: Lens + Sized + 'static,
+    L2: Lens + Sized + 'static,
+    L1::B: TyEq<L2::A>, // NEED TO WITNESS THAT THESE TYPES ARE THE SAME SOME-FUCKING-HOW
+    L1::A: Sized + 'static,
+    L1::B: Sized + 'static,
+    L2::A: Sized + 'static,
+    L2::B: Sized + 'static,
 {
-    fn f<F: Functor>(k: impl Fn(B) -> F::F<B>) -> impl Fn(A) -> F::F<A> {
-        L1::f::<F>(L2::f::<F>(k))
+    type A = L1::A;
+    type B = L2::B;
+
+    fn f<F: Functor + 'static>(
+        k: impl Fn(Self::B) -> F::F<Self::B> + 'static,
+    ) -> impl Fn(Self::A) -> F::F<Self::A> {
+        let k2 = L2::f::<F>(move |b| k(TyEq::rwi(b)));
+        L1::f::<F>(move |b| F::fmap(TyEq::rwi, k2(TyEq::rw(b))))
+
+        // let
+        // L1::f::<F>(L2::f::<F>(k))
+        // todo!()
+    }
+    // fn f<F: Functor>(k: impl Fn(B) -> F::F<B>) -> impl Fn(A) -> F::F<A> {
+    //     L1::f::<F>(L2::f::<F>(k))
+    // }
+}
+
+// trait TyEq {}
+// impl<T> TyEq for (T,T) {}
+
+trait TyEq<T> {
+    fn rw(self) -> T;
+    fn rwi(x: T) -> Self;
+}
+
+impl<T> TyEq<T> for T {
+    fn rw(self) -> T {
+        self
+    }
+    fn rwi(x: T) -> Self {
+        x
     }
 }
+
+// fn f<T, U>(x: T) -> U where T: TyEq<U> { // ... where T == U
+//     x.rw()
+// }
+
+// fn g<T, U>(x: T) -> U where U: TyEq<T> { // ... where U == T
+//     U::rwi(x)
+// }
