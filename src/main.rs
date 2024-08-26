@@ -10,9 +10,9 @@ fn main() {
 
     println!("atom: {:?}", atom);
     println!("atom point: {:?}", getter::<AtomPoint>(atom.clone()));
-    println!("atom x: {:?}", getter::<C<AtomPoint, PointX>>(atom.clone()));
+    println!("atom x: {:?}", getter::<(AtomPoint, PointX)>(atom.clone()));
 
-    let shift_x = |a| over::<C<AtomPoint, PointX>>(a, |x| x + 1);
+    let shift_x = |a| over::<(AtomPoint, PointX)>(a, |x| x + 1);
 
     let shifted = shift_x(atom);
 
@@ -107,18 +107,11 @@ impl Lens for PointX {
     }
 }
 
-/// lense compose
-struct C<L1, L2>(L1, L2);
-
-impl<L1, L2> Lens for C<L1, L2>
+impl<L1, L2> Lens for (L1, L2)
 where
-    L1: Lens + Sized,
-    L2: Lens + Sized,
+    L1: Lens,
+    L2: Lens,
     L1::B: TyEq<L2::A>, // NEED TO WITNESS THAT THESE TYPES ARE THE SAME SOME-FUCKING-HOW
-    L1::A: Sized,
-    L1::B: Sized,
-    L2::A: Sized,
-    L2::B: Sized,
 {
     type A = L1::A;
     type B = L2::B;
@@ -126,10 +119,6 @@ where
     fn f<F: Functor>(k: impl Fn(Self::B) -> F::F<Self::B>) -> impl Fn(Self::A) -> F::F<Self::A> {
         let k2 = L2::f::<F>(move |b| k(TyEq::rwi(b)));
         L1::f::<F>(move |b| F::fmap(TyEq::rwi, k2(TyEq::rw(b))))
-
-        // let
-        // L1::f::<F>(L2::f::<F>(k))
-        // todo!()
     }
 }
 
