@@ -12,18 +12,39 @@ fn main() {
     println!("atom point: {:?}", getter::<AtomPoint>(atom.clone()));
     println!("atom x: {:?}", getter::<(AtomPoint, PointX)>(atom.clone()));
 
-    let shift_x = |a| over::<(AtomPoint, PointX)>(a, |x| x + 1);
-
-    let shifted = shift_x(atom);
+    let shifted = over::<Lift<(AtomPoint, PointX)>>(atom, |x| x + 1);
 
     println!("shifted atom: {:?}", shifted);
+
+    let water = Molecule {
+        name: "water".to_string(),
+        atoms: vec![
+            Atom {
+                name: "hydrogen".to_string(),
+                point: Point{x: 0, y: 0},
+            },
+            Atom {
+                name: "hydrogen".to_string(),
+                point: Point{x: 1, y: 1},
+            },
+            Atom {
+                name: "oxygen".to_string(),
+                point: Point{x: 2, y: 2},
+            },
+        ],
+    };
+
+    println!("water: {:?}", water);
+
+    let shifted = over::<(Lift<MoleculeAtoms>, (VecElems<Atom>, (Lift<AtomPoint>, Lift<PointX>)))>(water, |x| x + 1);
+    println!("shifted water: {:?}", shifted);
 }
 
 fn getter<L: Lens>(a: L::A) -> L::B {
     L::f::<Const<L::B, Partial>>(|b| Const(b, PhantomData))(a).0
 }
 
-fn over<L: Lens>(a: L::A, f: impl Fn(L::B) -> L::B) -> L::A {
+fn over<L: Traversal>(a: L::A, f: impl Fn(L::B) -> L::B) -> L::A {
     L::f::<Identity<Partial>>(move |b| Identity(f(b)))(a).0
 }
 
@@ -81,7 +102,7 @@ struct Atom {
     name: String,
     point: Point,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 struct Point {
     x: u32,
     y: u32,
@@ -186,6 +207,37 @@ where
     fn f<F: Functor>(k: impl Fn(Self::B) -> F::F<Self::B>) -> impl Fn(Self::A) -> F::F<Self::A> {
         let k2 = L2::f::<F>(move |b| k(TyEq::rwi(b)));
         L1::f::<F>(move |b| F::fmap(TyEq::rwi, k2(TyEq::rw(b))))
+    }
+}
+
+impl<T1, T2> Traversal for (T1, T2)
+where
+    T1: Traversal,
+    T2: Traversal,
+    T1::B: TyEq<T2::A>, // NEED TO WITNESS THAT THESE TYPES ARE THE SAME SOME-FUCKING-HOW
+{
+    type A = T1::A;
+    type B = T2::B;
+
+    fn f<F: Applicative>(
+        k: impl Fn(Self::B) -> F::F<Self::B>,
+    ) -> impl Fn(Self::A) -> F::F<Self::A> {
+        let k2 = T2::f::<F>(move |b| k(TyEq::rwi(b)));
+        T1::f::<F>(move |b| F::fmap(TyEq::rwi, k2(TyEq::rw(b))))
+    }
+}
+
+// required b/c otherwise the Traversal impl for L: Lens and for (T1, T2) conflict
+struct Lift<L>(PhantomData<L>);
+
+impl<L: Lens> Traversal for Lift<L> {
+    type A = L::A;
+    type B = L::B;
+
+    fn f<F: Applicative>(
+        k: impl Fn(Self::B) -> F::F<Self::B>,
+    ) -> impl Fn(Self::A) -> F::F<Self::A> {
+        L::f::<F>(k)
     }
 }
 
