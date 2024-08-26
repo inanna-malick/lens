@@ -33,6 +33,11 @@ trait Functor {
     fn fmap<A, B>(f: impl Fn(A) -> B, x: Self::F<A>) -> Self::F<B>;
 }
 
+trait Applicative: Functor {
+    fn pure<A>(a: A) -> Self::F<A>;
+    fn seq<A, B>(a: Self::F<A>, b: Self::F<B>) -> Self::F<(A, B)>;
+}
+
 enum Partial {}
 
 struct Identity<A>(A);
@@ -42,6 +47,16 @@ impl Functor for Identity<Partial> {
 
     fn fmap<A, B>(f: impl Fn(A) -> B, x: Self::F<A>) -> Self::F<B> {
         Identity(f(x.0))
+    }
+}
+
+impl Applicative for Identity<Partial> {
+    fn pure<A>(a: A) -> Self::F<A> {
+        Identity(a)
+    }
+
+    fn seq<A, B>(a: Self::F<A>, b: Self::F<B>) -> Self::F<(A, B)> {
+        Identity((a.0, b.0))
     }
 }
 
@@ -55,9 +70,12 @@ impl<X> Functor for Const<X, Partial> {
 
 struct Const<A, B>(A, PhantomData<B>);
 
-// type Lens<A, B> = for<F: Functor> B -> F::F<>
+#[derive(Debug, Clone)]
+struct Molecule {
+    name: String,
+    atoms: Vec<Atom>,
+}
 
-// type Lens' a b = forall f . Functor f => (b -> f b) -> (a -> f a)
 #[derive(Debug, Clone)]
 struct Atom {
     name: String,
@@ -73,6 +91,55 @@ trait Lens {
     type A;
     type B;
     fn f<F: Functor>(k: impl Fn(Self::B) -> F::F<Self::B>) -> impl Fn(Self::A) -> F::F<Self::A>;
+}
+
+trait Traversal {
+    type A;
+    type B;
+    fn f<F: Applicative>(k: impl Fn(Self::B) -> F::F<Self::B>)
+        -> impl Fn(Self::A) -> F::F<Self::A>;
+}
+
+struct VecElems<X>(PhantomData<X>);
+
+impl<X> Traversal for VecElems<X> {
+    type A = Vec<X>;
+    type B = X;
+
+    fn f<F: Applicative>(
+        k: impl Fn(Self::B) -> F::F<Self::B>,
+    ) -> impl Fn(Self::A) -> F::F<Self::A> {
+        move |a: Vec<X>| {
+            a.into_iter().fold(F::pure(Vec::new()), |acc, i: X| {
+                F::fmap(
+                    |(mut elems, elem): (_, X)| {
+                        elems.push(elem);
+                        elems
+                    },
+                    F::seq(acc, k(i)),
+                )
+            })
+        }
+    }
+}
+
+struct MoleculeAtoms;
+
+impl Lens for MoleculeAtoms {
+    type A = Molecule;
+    type B = Vec<Atom>;
+
+    fn f<F: Functor>(k: impl Fn(Self::B) -> F::F<Self::B>) -> impl Fn(Self::A) -> F::F<Self::A> {
+        move |a| {
+            F::fmap(
+                move |new_atoms| Molecule {
+                    atoms: new_atoms,
+                    name: a.name.clone(),
+                },
+                k(a.atoms),
+            )
+        }
+    }
 }
 
 struct AtomPoint;
@@ -122,6 +189,7 @@ where
     }
 }
 
+// from https://github.com/rust-lang/rust/issues/20041#issuecomment-2106606655
 trait TyEq<T> {
     fn rw(self) -> T;
     fn rwi(x: T) -> Self;
