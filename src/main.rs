@@ -9,10 +9,10 @@ fn main() {
     };
 
     println!("atom: {:?}", atom);
-    println!("atom point: {:?}", getter::<AtomPoint>(atom.clone()));
-    println!("atom x: {:?}", getter::<(AtomPoint, PointX)>(atom.clone()));
+    println!("atom point: {:?}", AtomPoint::getter(atom.clone()));
+    println!("atom x: {:?}", <(AtomPoint, PointX)>::getter(atom.clone()));
 
-    let shifted = over::<Lift<(AtomPoint, PointX)>>(atom, |x| x + 1);
+    let shifted = <(AtomPoint, PointX)>::over(atom, |x| x + 1);
 
     println!("shifted atom: {:?}", shifted);
 
@@ -21,32 +21,58 @@ fn main() {
         atoms: vec![
             Atom {
                 name: "hydrogen".to_string(),
-                point: Point{x: 0, y: 0},
+                point: Point { x: 0, y: 0 },
             },
             Atom {
                 name: "hydrogen".to_string(),
-                point: Point{x: 1, y: 1},
+                point: Point { x: 1, y: 1 },
             },
             Atom {
                 name: "oxygen".to_string(),
-                point: Point{x: 2, y: 2},
+                point: Point { x: 2, y: 2 },
             },
         ],
     };
 
     println!("water: {:?}", water);
 
-    let shifted = over::<(Lift<MoleculeAtoms>, (VecElems<Atom>, (Lift<AtomPoint>, Lift<PointX>)))>(water, |x| x + 1);
+    let shifted = <(Lift<MoleculeAtoms>, (VecElems<Atom>, (Lift<AtomPoint>, Lift<PointX>)))>::over(water, |x| x + 1);
     println!("shifted water: {:?}", shifted);
+
+    let x_coords = <(Lift<MoleculeAtoms>, (VecElems<Atom>, (Lift<AtomPoint>, Lift<PointX>)))>::to_vec(shifted);
+    println!("shifted water x coords: {:?}", x_coords);
 }
 
-fn getter<L: Lens>(a: L::A) -> L::B {
-    L::f::<Const<L::B, Partial>>(|b| Const(b, PhantomData))(a).0
+// NOTE: the type level approach is neat but it preclues building aeson-lens style functionality
+//       specifically, how would I construct a lens that looks a string key up from a hashmap at
+//       typelevel? u can't. also const type param are u128,u32,char,bool only - no str
+
+
+
+
+trait LensExt: Lens {
+    fn getter(a: Self::A) -> Self::B {
+        Self::f::<Const<Self::B, Partial>>(|b| Const(b, PhantomData))(a).0
+    }
+
+    fn over(a: Self::A, f: impl Fn(Self::B) -> Self::B) -> Self::A {
+        Self::f::<Identity<Partial>>(move |b| Identity(f(b)))(a).0
+    }
 }
 
-fn over<L: Traversal>(a: L::A, f: impl Fn(L::B) -> L::B) -> L::A {
-    L::f::<Identity<Partial>>(move |b| Identity(f(b)))(a).0
+impl<L: Lens> LensExt for L {}
+
+trait TraversalExt: Traversal {
+    fn to_vec(a: Self::A) -> Vec<Self::B> {
+        Self::f::<Const<Vec<Self::B>, Partial>>(|b| Const(vec![b], PhantomData))(a).0
+    }
+
+    fn over(a: Self::A, f: impl Fn(Self::B) -> Self::B) -> Self::A {
+        Self::f::<Identity<Partial>>(move |b| Identity(f(b)))(a).0
+    }
 }
+
+impl<T: Traversal> TraversalExt for T {}
 
 trait Functor {
     type F<A>;
@@ -88,6 +114,41 @@ impl<X> Functor for Const<X, Partial> {
         Const(x.0, PhantomData)
     }
 }
+
+trait Monoid {
+    fn zero() -> Self;
+    fn concat(a: Self, b: Self) -> Self;
+}
+
+impl<X> Monoid for Vec<X> {
+    fn zero() -> Self {
+        Vec::new()
+    }
+
+    fn concat(mut a: Self, b: Self) -> Self {
+        a.extend(b.into_iter());
+        a
+    }
+}
+
+impl<X: Monoid> Applicative for Const<X, Partial> {
+    fn pure<A>(_a: A) -> Self::F<A> {
+        Const(X::zero(), PhantomData)
+    }
+
+    fn seq<A, B>(a: Self::F<A>, b: Self::F<B>) -> Self::F<(A, B)> {
+        Const(X::concat(a.0,b.0), PhantomData)
+    }
+}
+
+impl<X> Functor for Vec<X> {
+    type F<A> = Vec<A>;
+
+    fn fmap<A, B>(f: impl Fn(A) -> B, x: Self::F<A>) -> Self::F<B> {
+        x.into_iter().map(f).collect()
+    }
+}
+
 
 struct Const<A, B>(A, PhantomData<B>);
 
