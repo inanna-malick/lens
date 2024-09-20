@@ -12,10 +12,10 @@ fn main() {
     };
 
     println!("atom: {:?}", atom);
-    println!("atom point: {:?}", AtomPoint::getter(atom.clone()));
-    println!("atom x: {:?}", <(AtomPoint, PointX)>::getter(atom.clone()));
+    println!("atom point: {:?}", Atom::point().getter(atom.clone()));
+    println!("atom x: {:?}", Atom::point().and(Point::x()).getter(atom.clone()));
 
-    let shifted = <(AtomPoint, PointX)>::over(atom, |x| x + 1);
+    let shifted = Atom::point().and(Point::x()).over(atom, |x| x + 1);
 
     println!("shifted atom: {:?}", shifted);
 
@@ -39,37 +39,63 @@ fn main() {
 
     println!("water: {:?}", water);
 
-    let shifted = <(Lift<MoleculeAtoms>, (VecElems<Atom>, (Lift<AtomPoint>, Lift<PointX>)))>::over(water, |x| x + 1);
+    let molecule_x_coords = Molecule::atoms().all(VecElems(PhantomData)).and(Atom::point()).and(Point::x());
+
+    let shifted = molecule_x_coords.over(water, |x| x + 1);
     println!("shifted water: {:?}", shifted);
 
-    let x_coords = <(Lift<MoleculeAtoms>, (VecElems<Atom>, (Lift<AtomPoint>, Lift<PointX>)))>::to_vec(shifted);
+    let x_coords = molecule_x_coords.to_vec(shifted);
     println!("shifted water x coords: {:?}", x_coords);
 }
 
-// NOTE: the type level approach is neat but it preclues building aeson-lens style functionality
-//       specifically, how would I construct a lens that looks a string key up from a hashmap at
-//       typelevel? u can't. also const type param are u128,u32,char,bool only - no str
-
 
 trait LensExt: Lens {
-    fn getter(a: Self::A) -> Self::B {
-        Self::f::<Const<Self::B, Partial>>(|b| Const(b, PhantomData))(a).0
+    fn getter(&self, a: Self::A) -> Self::B {
+        self.f::<Const<Self::B, Partial>>(|b| Const(b, PhantomData))(a).0
     }
 
-    fn over(a: Self::A, f: impl Fn(Self::B) -> Self::B) -> Self::A {
-        Self::f::<Identity<Partial>>(move |b| Identity(f(b)))(a).0
+    fn over(&self, a: Self::A, f: impl Fn(Self::B) -> Self::B) -> Self::A {
+        self.f::<Identity<Partial>>(move |b| Identity(f(b)))(a).0
+    }
+
+    fn and<OA, OB, O: Lens<A = OA, B = OB>>(self, other: O) -> impl Lens<A = Self::A, B = OB> where 
+    
+        Self::B: TyEq<OA>, // NEED TO WITNESS THAT THESE TYPES ARE THE SAME SOME-FUCKING-HOW
+    {
+        Compose(self, other)
+    }
+
+    fn all<OA, OB, O: Traversal<A = OA, B = OB>>(self, other: O) -> impl Traversal<A = Self::A, B = OB> where 
+    
+        Self::B: TyEq<OA>, // NEED TO WITNESS THAT THESE TYPES ARE THE SAME SOME-FUCKING-HOW
+    {
+        Compose(Lift(self), other)
     }
 }
 
 impl<L: Lens> LensExt for L {}
 
 trait TraversalExt: Traversal {
-    fn to_vec(a: Self::A) -> Vec<Self::B> {
-        Self::f::<Const<Vec<Self::B>, Partial>>(|b| Const(vec![b], PhantomData))(a).0
+    fn to_vec(&self, a: Self::A) -> Vec<Self::B> {
+        self.f::<Const<Vec<Self::B>, Partial>>(|b| Const(vec![b], PhantomData))(a).0
     }
 
-    fn over(a: Self::A, f: impl Fn(Self::B) -> Self::B) -> Self::A {
-        Self::f::<Identity<Partial>>(move |b| Identity(f(b)))(a).0
+    fn over(&self, a: Self::A, f: impl Fn(Self::B) -> Self::B) -> Self::A {
+        self.f::<Identity<Partial>>(move |b| Identity(f(b)))(a).0
+    }
+
+    fn and<OA, OB, O: Lens<A = OA, B = OB>>(self, other: O) -> impl Traversal<A = Self::A, B = OB> where 
+    
+        Self::B: TyEq<OA>, // NEED TO WITNESS THAT THESE TYPES ARE THE SAME SOME-FUCKING-HOW
+    {
+        Compose(self, Lift(other))
+    }
+
+    fn all<OA, OB, O: Traversal<A = OA, B = OB>>(self, other: O) -> impl Traversal<A = Self::A, B = OB> where 
+    
+        Self::B: TyEq<OA>, // NEED TO WITNESS THAT THESE TYPES ARE THE SAME SOME-FUCKING-HOW
+    {
+        Compose(self, other)
     }
 }
 
@@ -82,27 +108,48 @@ struct Molecule {
     atoms: Vec<Atom>,
 }
 
+impl Molecule {
+    // todo generic way to construct from functions
+    pub fn atoms() -> MoleculeAtoms {
+        MoleculeAtoms
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Atom {
     name: String,
     point: Point,
 }
+
+impl Atom {
+    // todo generic way to construct from functions
+    pub fn point() -> AtomPoint {
+        AtomPoint
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct Point {
     x: u32,
     y: u32,
 }
 
-trait Lens {
-    type A;
-    type B;
-    fn f<F: Functor>(k: impl Fn(Self::B) -> F::F<Self::B>) -> impl Fn(Self::A) -> F::F<Self::A>;
+impl Point {
+    pub fn x() -> PointX {
+        PointX
+    }
 }
 
-trait Traversal {
+trait Lens: Sized {
     type A;
     type B;
-    fn f<F: Applicative>(k: impl Fn(Self::B) -> F::F<Self::B>)
+    fn f<F: Functor>(&self, k: impl Fn(Self::B) -> F::F<Self::B>) -> impl Fn(Self::A) -> F::F<Self::A>;
+}
+
+trait Traversal: Sized {
+    type A;
+    type B;
+    fn f<F: Applicative>(&self, k: impl Fn(Self::B) -> F::F<Self::B>)
         -> impl Fn(Self::A) -> F::F<Self::A>;
 }
 
@@ -112,7 +159,7 @@ impl<X> Traversal for VecElems<X> {
     type A = Vec<X>;
     type B = X;
 
-    fn f<F: Applicative>(
+    fn f<F: Applicative>(&self, 
         k: impl Fn(Self::B) -> F::F<Self::B>,
     ) -> impl Fn(Self::A) -> F::F<Self::A> {
         move |a: Vec<X>| {
@@ -135,7 +182,7 @@ impl Lens for MoleculeAtoms {
     type A = Molecule;
     type B = Vec<Atom>;
 
-    fn f<F: Functor>(k: impl Fn(Self::B) -> F::F<Self::B>) -> impl Fn(Self::A) -> F::F<Self::A> {
+    fn f<F: Functor>(&self, k: impl Fn(Self::B) -> F::F<Self::B>) -> impl Fn(Self::A) -> F::F<Self::A> {
         move |a| {
             F::fmap(
                 move |new_atoms| Molecule {
@@ -148,13 +195,15 @@ impl Lens for MoleculeAtoms {
     }
 }
 
+// struct FnLens<A,B,F: Fn(Self::B) -> Functor::F<B> -> Fn(A) -> Functor::F<A>>
+
 struct AtomPoint;
 
 impl Lens for AtomPoint {
     type A = Atom;
     type B = Point;
 
-    fn f<F: Functor>(k: impl Fn(Self::B) -> F::F<Self::B>) -> impl Fn(Self::A) -> F::F<Self::A> {
+    fn f<F: Functor>(&self, k: impl Fn(Self::B) -> F::F<Self::B>) -> impl Fn(Self::A) -> F::F<Self::A> {
         // clone req'd because fmap may call fn multiple times
         // TODO: Try using an FnOnce, see if that breaks anything
         move |a| {
@@ -175,12 +224,12 @@ impl Lens for PointX {
     type A = Point;
     type B = u32;
 
-    fn f<F: Functor>(k: impl Fn(Self::B) -> F::F<Self::B>) -> impl Fn(Self::A) -> F::F<Self::A> {
+    fn f<F: Functor>(&self, k: impl Fn(Self::B) -> F::F<Self::B>) -> impl Fn(Self::A) -> F::F<Self::A> {
         move |a| F::fmap(move |new_x| Point { x: new_x, y: a.y }, k(a.x))
     }
 }
 
-impl<L1, L2> Lens for (L1, L2)
+impl<L1, L2> Lens for Compose<L1, L2>
 where
     L1: Lens,
     L2: Lens,
@@ -189,13 +238,15 @@ where
     type A = L1::A;
     type B = L2::B;
 
-    fn f<F: Functor>(k: impl Fn(Self::B) -> F::F<Self::B>) -> impl Fn(Self::A) -> F::F<Self::A> {
-        let k2 = L2::f::<F>(move |b| k(TyEq::rwi(b)));
-        L1::f::<F>(move |b| F::fmap(TyEq::rwi, k2(TyEq::rw(b))))
+    fn f<F: Functor>(&self, k: impl Fn(Self::B) -> F::F<Self::B>) -> impl Fn(Self::A) -> F::F<Self::A> {
+        let k2 = self.1.f::<F>(move |b| k(TyEq::rwi(b)));
+        self.0.f::<F>(move |b| F::fmap(TyEq::rwi, k2(TyEq::rw(b))))
     }
 }
 
-impl<T1, T2> Traversal for (T1, T2)
+struct Compose<A, B> (A, B);
+
+impl<T1, T2> Traversal for Compose<T1, T2>
 where
     T1: Traversal,
     T2: Traversal,
@@ -204,25 +255,25 @@ where
     type A = T1::A;
     type B = T2::B;
 
-    fn f<F: Applicative>(
+    fn f<F: Applicative>(&self, 
         k: impl Fn(Self::B) -> F::F<Self::B>,
     ) -> impl Fn(Self::A) -> F::F<Self::A> {
-        let k2 = T2::f::<F>(move |b| k(TyEq::rwi(b)));
-        T1::f::<F>(move |b| F::fmap(TyEq::rwi, k2(TyEq::rw(b))))
+        let k2 = self.1.f::<F>(move |b| k(TyEq::rwi(b)));
+        self.0.f::<F>(move |b| F::fmap(TyEq::rwi, k2(TyEq::rw(b))))
     }
 }
 
 // required b/c otherwise the Traversal impl for L: Lens and for (T1, T2) conflict
-struct Lift<L>(PhantomData<L>);
+struct Lift<L>(L);
 
 impl<L: Lens> Traversal for Lift<L> {
     type A = L::A;
     type B = L::B;
 
     fn f<F: Applicative>(
-        k: impl Fn(Self::B) -> F::F<Self::B>,
+        &self, k: impl Fn(Self::B) -> F::F<Self::B>,
     ) -> impl Fn(Self::A) -> F::F<Self::A> {
-        L::f::<F>(k)
+        self.0.f::<F>(k)
     }
 }
 
