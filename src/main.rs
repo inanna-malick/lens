@@ -9,6 +9,8 @@ use json::*;
 mod util;
 use util::*;
 
+mod prism;
+
 mod example;
 use example::*;
 
