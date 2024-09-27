@@ -52,7 +52,7 @@ impl<X> Monoid for Vec<X> {
     }
 
     fn concat(mut a: Self, b: Self) -> Self {
-        a.extend(b.into_iter());
+        a.extend(b);
         a
     }
 }
@@ -63,7 +63,7 @@ impl<X: Monoid> Applicative for Const<X, Partial> {
     }
 
     fn seq<A, B>(a: Self::F<A>, b: Self::F<B>) -> Self::F<(A, B)> {
-        Const(X::concat(a.0,b.0), PhantomData)
+        Const(X::concat(a.0, b.0), PhantomData)
     }
 }
 
@@ -74,6 +74,5 @@ impl<X> Functor for Vec<X> {
         x.into_iter().map(f).collect()
     }
 }
-
 
 pub struct Const<A, B>(pub A, pub PhantomData<B>);
