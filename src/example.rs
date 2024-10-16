@@ -1,4 +1,4 @@
-use crate::{Functor, Lens};
+use crate::{Functor, Lens, LensExt as _};
 
 #[derive(Debug, Clone)]
 pub struct Molecule {
@@ -23,6 +23,22 @@ impl Atom {
     // todo generic way to construct from functions
     pub fn point() -> AtomPoint {
         AtomPoint
+    }
+
+    #[inline(never)]
+    pub fn test1(self) -> Atom {
+        Atom::point().and(Point::x()).over(self, |x| x + 1)
+    }
+
+    #[inline(never)]
+    pub fn test2(self) -> Atom {
+        Atom {
+            point: Point {
+                x: self.point.x + 1,
+                y: self.point.y,
+            },
+            name: self.name,
+        }
     }
 }
 
@@ -68,6 +84,7 @@ impl Lens for AtomPoint {
     type A = Atom;
     type B = Point;
 
+    #[inline(always)]
     fn f<F: Functor>(
         &self,
         k: impl Fn(Self::B) -> F::F<Self::B>,
@@ -92,6 +109,7 @@ impl Lens for PointX {
     type A = Point;
     type B = u32;
 
+    #[inline(always)]
     fn f<F: Functor>(
         &self,
         k: impl Fn(Self::B) -> F::F<Self::B>,

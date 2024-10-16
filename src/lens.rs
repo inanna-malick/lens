@@ -16,10 +16,12 @@ pub trait LensExt: Lens {
         self.f::<Const<Self::B, Partial>>(|b| Const(b, PhantomData))(a).0
     }
 
+    #[inline(always)]
     fn over(&self, a: Self::A, f: impl Fn(Self::B) -> Self::B) -> Self::A {
         self.f::<Identity<Partial>>(move |b| Identity(f(b)))(a).0
     }
 
+    #[inline(always)]
     fn and<OA, OB, O: Lens<A = OA, B = OB>>(self, other: O) -> impl Lens<A = Self::A, B = OB>
     where
         Self::B: TyEq<OA>, // NEED TO WITNESS THAT THESE TYPES ARE THE SAME SOME-FUCKING-HOW

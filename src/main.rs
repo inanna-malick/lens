@@ -1,6 +1,9 @@
 mod functor;
+use std::borrow::Cow;
+
 use functor::*;
 mod traversal;
+use prism::{idx, PrismExt};
 use traversal::*;
 mod lens;
 use lens::*;
@@ -19,31 +22,54 @@ use serde_json::{json, Map, Value};
 // todo revisit later
 
 fn main() {
-    let str = Value::String("test".to_string());
+    let str = json!({"imagine": "nothing"});
+    let obj = json!({"imagine": { "something": {"else": "entirely"}}});
+    let obj_arr = json!({"imagine": { "something": [{"else": "entirely"}, null, {"woah": "yeah"}]}});
 
-    let obj = json!({"key": { "something": "else"}});
-
-    let jst = ValueObject()
-        .all(ObjectKey {
-            key: "key".to_string(),
-        })
-        .all(ValueObject());
+    let prism = object_key("imagine").and_if(object_key("something"));
+    let prism2 = object_key("imagine").and_if(object_key("something")).and_if(JArray).and_if(idx(2));
 
     println!(
-        "tovec: s vo: ${:?}, o vs: ${:?}",
-        jst.t_to_vec(str.clone()),
-        jst.t_to_vec(obj.clone())
+        "prism tovec: s vo: ${:?}, o vs: ${:?}, obj_arr {:?}",
+        prism.t_to_vec(str.clone()),
+        prism.t_to_vec(obj.clone()),
+        prism.t_to_vec(obj_arr.clone())
     );
 
-    let addkey = |mut m: Map<String, Value>| {
-        m.insert("new".to_string(), Value::Null);
-        m
+    println!(
+        "prism2 tovec: s vo: ${:?}, o vs: ${:?}, obj_arr {:?}",
+        prism2.t_to_vec(str.clone()),
+        prism2.t_to_vec(obj.clone()),
+        prism2.t_to_vec(obj_arr.clone())
+    );
+
+    println!(
+        "prism to_opt: s vo: ${:?}, o vs: ${:?}, obj_arr {:?}",
+        prism.t_to_opt(str.clone()),
+        prism.t_to_opt(obj.clone()),
+        prism.t_to_vec(obj_arr.clone())
+    );
+
+    let addkey = |mut v: Value| {
+        if let Some(m) = v.as_object_mut() {
+            m.insert("new".to_string(), Value::Null);
+        }
+        v
     };
 
     println!(
-        "addkey over: s vo: ${:?}, o vs: ${:?}",
-        jst.over(str, addkey),
-        jst.over(obj, addkey)
+        "addkey over prism2: s vo: ${:?}, o vs: ${:?}, obj_arr {:?}",
+        prism2.over(str.clone(), addkey),
+        prism2.over(obj.clone(), addkey),
+        prism2.over(obj_arr.clone(), addkey)
+    );
+
+
+    println!(
+        "addkey over prism: s vo: ${:?}, o vs: ${:?}, obj_arr {:?}",
+        prism.over(str, addkey),
+        prism.over(obj, addkey),
+        prism.over(obj_arr, addkey)
     );
 
     let point = Point { x: 1, y: 1 };
@@ -58,6 +84,12 @@ fn main() {
     println!(
         "atom x: {:?}",
         Atom::point().and(Point::x()).getter(atom.clone())
+    );
+
+    println!(
+        "a, b, {:?}, {:?}",
+        atom.clone().test1(),
+        atom.clone().test2()
     );
 
     let shifted = Atom::point().and(Point::x()).over(atom, |x| x + 1);
