@@ -1,9 +1,10 @@
 mod functor;
-use std::borrow::Cow;
+use std::{path::PathBuf, process::ExitCode};
 
+use clap::Parser;
 use functor::*;
 mod traversal;
-use prism::{idx, PrismExt};
+use parse::*;
 use traversal::*;
 mod lens;
 use lens::*;
@@ -15,115 +16,149 @@ use util::*;
 mod prism;
 
 mod example;
-use example::*;
 
-use serde_json::{json, Map, Value};
+#[derive(Parser, Debug)]
+#[command(
+    name = "detect",
+    author,
+    version,
+    about,
+    long_about,
+    verbatim_doc_comment
+)]
+struct Args {
+    #[clap(index = 1)]
+    path: PathBuf,
+    #[clap(index = 2)]
+    expr: String,
+}
 
-// todo revisit later
+fn main() -> ExitCode {
+    let args = Args::parse();
+    // {
+    //     use nom::bytes::complete::tag;
+    //     use nom::multi::many_till;
+    //     use nom::{
+    //         error::{Error, ErrorKind},
+    //         Err, IResult,
+    //     };
 
-fn main() {
-    let str = json!({"imagine": "nothing"});
-    let obj = json!({"imagine": { "something": {"else": "entirely"}}});
-    let obj_arr = json!({"imagine": { "something": [{"else": "entirely"}, null, {"woah": "yeah"}]}});
+    //     println!("res: {:?}", tokens_parser_2(".a.b[1]"));
+    //     println!("res: {:?}", tokens_parser_2(".a.b[1] = 2"));
+    //     println!("res: {:?}", tokens_parser_2(".a"));
+    //     println!("res: {:?}", tokens_parser_2("[1]"));
+    // }
 
-    let prism = object_key("imagine").and_if(object_key("something"));
-    let prism2 = object_key("imagine").and_if(object_key("something")).and_if(JArray).and_if(idx(2));
+    let expression = tokens_parser_2(args.expr.as_str()).unwrap().1;
+    let expression = expression.compile().unwrap();
+    let code = expression.execute(args.path).unwrap();
+    return code;
 
-    println!(
-        "prism tovec: s vo: ${:?}, o vs: ${:?}, obj_arr {:?}",
-        prism.t_to_vec(str.clone()),
-        prism.t_to_vec(obj.clone()),
-        prism.t_to_vec(obj_arr.clone())
-    );
+    // let str = json!({"imagine": "nothing"});
+    // let obj = json!({"imagine": { "something": {"else": "entirely"}}});
+    // let obj_arr =
+    //     json!({"imagine": { "something": [{"else": "entirely"}, null, {"woah": "yeah"}]}});
 
-    println!(
-        "prism2 tovec: s vo: ${:?}, o vs: ${:?}, obj_arr {:?}",
-        prism2.t_to_vec(str.clone()),
-        prism2.t_to_vec(obj.clone()),
-        prism2.t_to_vec(obj_arr.clone())
-    );
+    // let prism = object_key("imagine").and_if(object_key("something"));
+    // let prism2 = object_key("imagine")
+    //     .and_if(object_key("something"))
+    //     .and_if(JArray)
+    //     .and_if(idx(2));
 
-    println!(
-        "prism to_opt: s vo: ${:?}, o vs: ${:?}, obj_arr {:?}",
-        prism.t_to_opt(str.clone()),
-        prism.t_to_opt(obj.clone()),
-        prism.t_to_vec(obj_arr.clone())
-    );
+    // println!(
+    //     "prism tovec: s vo: ${:?}, o vs: ${:?}, obj_arr {:?}",
+    //     prism.t_to_vec(str.clone()),
+    //     prism.t_to_vec(obj.clone()),
+    //     prism.t_to_vec(obj_arr.clone())
+    // );
 
-    let addkey = |mut v: Value| {
-        if let Some(m) = v.as_object_mut() {
-            m.insert("new".to_string(), Value::Null);
-        }
-        v
-    };
+    // println!(
+    //     "prism2 tovec: s vo: ${:?}, o vs: ${:?}, obj_arr {:?}",
+    //     prism2.t_to_vec(str.clone()),
+    //     prism2.t_to_vec(obj.clone()),
+    //     prism2.t_to_vec(obj_arr.clone())
+    // );
 
-    println!(
-        "addkey over prism2: s vo: ${:?}, o vs: ${:?}, obj_arr {:?}",
-        prism2.over(str.clone(), addkey),
-        prism2.over(obj.clone(), addkey),
-        prism2.over(obj_arr.clone(), addkey)
-    );
+    // println!(
+    //     "prism to_opt: s vo: ${:?}, o vs: ${:?}, obj_arr {:?}",
+    //     prism.t_to_opt(str.clone()),
+    //     prism.t_to_opt(obj.clone()),
+    //     prism.t_to_vec(obj_arr.clone())
+    // );
 
+    // let addkey = |mut v: Value| {
+    //     if let Some(m) = v.as_object_mut() {
+    //         m.insert("new".to_string(), Value::Null);
+    //     }
+    //     v
+    // };
 
-    println!(
-        "addkey over prism: s vo: ${:?}, o vs: ${:?}, obj_arr {:?}",
-        prism.over(str, addkey),
-        prism.over(obj, addkey),
-        prism.over(obj_arr, addkey)
-    );
+    // println!(
+    //     "addkey over prism2: s vo: ${:?}, o vs: ${:?}, obj_arr {:?}",
+    //     prism2.over(str.clone(), addkey),
+    //     prism2.over(obj.clone(), addkey),
+    //     prism2.over(obj_arr.clone(), addkey)
+    // );
 
-    let point = Point { x: 1, y: 1 };
+    // println!(
+    //     "addkey over prism: s vo: ${:?}, o vs: ${:?}, obj_arr {:?}",
+    //     prism.over(str, addkey),
+    //     prism.over(obj, addkey),
+    //     prism.over(obj_arr, addkey)
+    // );
 
-    let atom = Atom {
-        name: "helium".to_string(),
-        point,
-    };
+    // let point = Point { x: 1, y: 1 };
 
-    println!("atom: {:?}", atom);
-    println!("atom point: {:?}", Atom::point().getter(atom.clone()));
-    println!(
-        "atom x: {:?}",
-        Atom::point().and(Point::x()).getter(atom.clone())
-    );
+    // let atom = Atom {
+    //     name: "helium".to_string(),
+    //     point,
+    // };
 
-    println!(
-        "a, b, {:?}, {:?}",
-        atom.clone().test1(),
-        atom.clone().test2()
-    );
+    // println!("atom: {:?}", atom);
+    // println!("atom point: {:?}", Atom::point().getter(atom.clone()));
+    // println!(
+    //     "atom x: {:?}",
+    //     Atom::point().and(Point::x()).getter(atom.clone())
+    // );
 
-    let shifted = Atom::point().and(Point::x()).over(atom, |x| x + 1);
+    // println!(
+    //     "a, b, {:?}, {:?}",
+    //     atom.clone().test1(),
+    //     atom.clone().test2()
+    // );
 
-    println!("shifted atom: {:?}", shifted);
+    // let shifted = Atom::point().and(Point::x()).over(atom, |x| x + 1);
 
-    let water = Molecule {
-        name: "water".to_string(),
-        atoms: vec![
-            Atom {
-                name: "hydrogen".to_string(),
-                point: Point { x: 0, y: 0 },
-            },
-            Atom {
-                name: "hydrogen".to_string(),
-                point: Point { x: 1, y: 1 },
-            },
-            Atom {
-                name: "oxygen".to_string(),
-                point: Point { x: 2, y: 2 },
-            },
-        ],
-    };
+    // println!("shifted atom: {:?}", shifted);
 
-    println!("water: {:?}", water);
+    // let water = Molecule {
+    //     name: "water".to_string(),
+    //     atoms: vec![
+    //         Atom {
+    //             name: "hydrogen".to_string(),
+    //             point: Point { x: 0, y: 0 },
+    //         },
+    //         Atom {
+    //             name: "hydrogen".to_string(),
+    //             point: Point { x: 1, y: 1 },
+    //         },
+    //         Atom {
+    //             name: "oxygen".to_string(),
+    //             point: Point { x: 2, y: 2 },
+    //         },
+    //     ],
+    // };
 
-    let molecule_x_coords = Molecule::atoms()
-        .all(elems())
-        .and(Atom::point())
-        .and(Point::x());
+    // println!("water: {:?}", water);
 
-    let shifted = molecule_x_coords.over(water, |x| x + 1);
-    println!("shifted water: {:?}", shifted);
+    // let molecule_x_coords = Molecule::atoms()
+    //     .all(elems())
+    //     .and(Atom::point())
+    //     .and(Point::x());
 
-    let x_coords = molecule_x_coords.t_to_vec(shifted);
-    println!("shifted water x coords: {:?}", x_coords);
+    // let shifted = molecule_x_coords.over(water, |x| x + 1);
+    // println!("shifted water: {:?}", shifted);
+
+    // let x_coords = molecule_x_coords.t_to_vec(shifted);
+    // println!("shifted water x coords: {:?}", x_coords);
 }

@@ -59,3 +59,18 @@ where
         self.0.f::<F>(move |b| F::fmap(TyEq::rwi, k2(TyEq::rw(b))))
     }
 }
+
+pub struct IdentityLens<X>(pub PhantomData<X>);
+
+impl<X> Lens for IdentityLens<X> {
+    type A = X;
+
+    type B = X;
+
+    fn f<F: Functor>(
+        &self,
+        k: impl Fn(Self::B) -> F::F<Self::B>,
+    ) -> impl Fn(Self::A) -> F::F<Self::A> {
+        move |x| k(x)
+    }
+}

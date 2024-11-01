@@ -2,8 +2,10 @@ use std::{borrow::Cow, cell::OnceCell, collections::HashMap};
 
 use serde_json::{Map, Number, Value};
 
+pub mod parse;
+
 use crate::{
-    prism::{Prism},
+    prism::{idx, Prism, VecIdx},
     Applicative, Compose, Traversal,
 };
 
@@ -74,6 +76,10 @@ impl<'a> Traversal for MapKey<'a> {
 
 pub fn object_key<'x, X: Into<Cow<'x, str>>>(x: X) -> Compose<JObject, MapKey<'x>> {
     Compose(JObject, MapKey { key: x.into() })
+}
+
+pub fn arr_idx(x: usize) -> Compose<JArray, VecIdx<Value>> {
+    Compose(JArray, idx(x))
 }
 
 struct JString;

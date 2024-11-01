@@ -86,23 +86,38 @@ where
 {
 }
 
+pub struct LiftPrism<P>(pub P);
+
+impl<L: Lens> Traversal for LiftPrism<L> {
+    type A = L::A;
+
+    type B = L::B;
+
+    fn f<F: Applicative>(
+        &self,
+        k: impl Fn(Self::B) -> F::F<Self::B>,
+    ) -> impl Fn(Self::A) -> F::F<Self::A> {
+        self.0.f::<F>(k)
+    }
+}
+
+impl<L: Lens> Prism for LiftPrism<L> {}
+
 impl<T: Prism> PrismExt for T {}
 
 pub struct VecIdx<X> {
     idx: usize,
-    vec_value_type: PhantomData<X>
+    vec_value_type: PhantomData<X>,
 }
 
 pub fn idx<X>(idx: usize) -> VecIdx<X> {
-    VecIdx{
+    VecIdx {
         idx,
         vec_value_type: PhantomData,
     }
 }
 
-impl<X: Clone> Prism for VecIdx<X> {
-
-}
+impl<X: Clone> Prism for VecIdx<X> {}
 
 // NOTE: only does the thing if object exists at that path. maybe make it create if path not viable? would be neat,
 //       for use case of creating objects on the cmd line in a file. ok, but could have code at a _higher level_ do that. yes.
@@ -123,17 +138,17 @@ impl<X: Clone> Traversal for VecIdx<X> {
             match item {
                 Some(item) => {
                     let vec2 = vec.clone(); // TODO: remove somehow
-                F::fmap(
-                    move |item2| {
-                        let mut vec2 = vec2.clone(); // TODO: remove somehow
+                    F::fmap(
+                        move |item2| {
+                            let mut vec2 = vec2.clone(); // TODO: remove somehow
 
-                        vec2.insert(self.idx, item2);
+                            vec2.insert(self.idx, item2);
 
-                        vec2
-                    },
-                    k(item.clone()),
-                )
-                },
+                            vec2
+                        },
+                        k(item.clone()),
+                    )
+                }
                 None => F::pure(vec),
             }
         }
